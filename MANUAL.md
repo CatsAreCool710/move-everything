@@ -548,6 +548,8 @@ Move Everything includes an optional screen reader for accessibility, using text
 Toggle via **Global Settings > Screen Reader** (**Shift+Vol + Step 2**), or **Shift+Note/Session** when Shadow UI is disabled.
 
 Settings:
+- **TTS Engine**: eSpeak-NG or Flite
+- **Voice**: English voice variant — en, en-US, en-GB-x-rp (Received Pronunciation), en-GB-scotland (Scottish). eSpeak-NG only; hidden when Flite is selected.
 - **Speed**: 0.5x to 6.0x
 - **Pitch**: 80-180 Hz
 - **Volume**: 0-100%

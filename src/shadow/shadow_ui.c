@@ -1798,6 +1798,40 @@ static JSValue js_tts_get_engine(JSContext *ctx, JSValueConst this_val,
     return JS_NewString(ctx, shadow_control->tts_engine == 1 ? "flite" : "espeak");
 }
 
+/* Voice name table for tts_voice index (must match eSpeak-NG lang/gmw/ filenames) */
+static const char *tts_voice_names[] = {"en", "en-US", "en-GB-x-rp", "en-GB-scotland"};
+static const int tts_voice_count = 4;
+
+/* tts_set_voice(name) - Write voice index to shared memory */
+static JSValue js_tts_set_voice(JSContext *ctx, JSValueConst this_val,
+                                  int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1 || !shadow_control) return JS_UNDEFINED;
+
+    const char *name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_UNDEFINED;
+
+    for (int i = 0; i < tts_voice_count; i++) {
+        if (strcmp(name, tts_voice_names[i]) == 0) {
+            shadow_control->tts_voice = (uint8_t)i;
+            break;
+        }
+    }
+
+    JS_FreeCString(ctx, name);
+    return JS_UNDEFINED;
+}
+
+/* tts_get_voice() -> string - Read voice name from shared memory */
+static JSValue js_tts_get_voice(JSContext *ctx, JSValueConst this_val,
+                                  int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_NewString(ctx, "en");
+    int idx = shadow_control->tts_voice;
+    if (idx < 0 || idx >= tts_voice_count) idx = 0;
+    return JS_NewString(ctx, tts_voice_names[idx]);
+}
+
 /* tts_set_debounce(ms) - Write debounce time to shared memory */
 static JSValue js_tts_set_debounce(JSContext *ctx, JSValueConst this_val,
                                     int argc, JSValueConst *argv) {
@@ -2146,6 +2180,8 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "tts_get_engine", JS_NewCFunction(ctx, js_tts_get_engine, "tts_get_engine", 0));
     JS_SetPropertyStr(ctx, global_obj, "tts_set_debounce", JS_NewCFunction(ctx, js_tts_set_debounce, "tts_set_debounce", 1));
     JS_SetPropertyStr(ctx, global_obj, "tts_get_debounce", JS_NewCFunction(ctx, js_tts_get_debounce, "tts_get_debounce", 0));
+    JS_SetPropertyStr(ctx, global_obj, "tts_set_voice", JS_NewCFunction(ctx, js_tts_set_voice, "tts_set_voice", 1));
+    JS_SetPropertyStr(ctx, global_obj, "tts_get_voice", JS_NewCFunction(ctx, js_tts_get_voice, "tts_get_voice", 0));
 
     /* Register overlay knobs mode functions */
     JS_SetPropertyStr(ctx, global_obj, "overlay_knobs_set_mode", JS_NewCFunction(ctx, js_overlay_knobs_set_mode, "overlay_knobs_set_mode", 1));

@@ -51,6 +51,7 @@ static volatile bool tts_disabling_had_audio = false;  /* Track if we've played 
 static int tts_volume = 70;  /* Default 70% volume */
 static float tts_speed = 1.0f;  /* Default speed (1.0 = normal, 2.0 = double speed) */
 static float tts_pitch = 110.0f;  /* Default pitch in Hz (typical range: 80-180) */
+static char tts_voice[32] = "en";  /* Default voice: British English */
 
 static int espeak_sample_rate = 22050;  /* Returned by espeak_Initialize() */
 
@@ -226,6 +227,7 @@ static void espeak_save_config(void) {
 
     fprintf(f, "{\n");
     fprintf(f, "  \"engine\": \"%s\",\n", engine_name);
+    fprintf(f, "  \"voice\": \"%s\",\n", tts_voice);
     fprintf(f, "  \"speed\": %.2f,\n", tts_speed);
     fprintf(f, "  \"pitch\": %.1f,\n", tts_pitch);
     fprintf(f, "  \"volume\": %d\n", tts_volume);
@@ -233,8 +235,8 @@ static void espeak_save_config(void) {
     fclose(f);
 
     unified_log("tts_engine", LOG_LEVEL_INFO,
-               "TTS config saved: speed=%.2f, pitch=%.1f, volume=%d",
-               tts_speed, tts_pitch, tts_volume);
+               "TTS config saved: voice=%s, speed=%.2f, pitch=%.1f, volume=%d",
+               tts_voice, tts_speed, tts_pitch, tts_volume);
 }
 
 static void espeak_load_config(void) {
@@ -285,6 +287,23 @@ static void espeak_load_config(void) {
             }
         }
     }
+
+    const char *voice_key = strstr(config_buf, "\"voice\"");
+    if (voice_key) {
+        const char *colon = strchr(voice_key, ':');
+        if (colon) {
+            const char *q1 = strchr(colon, '"');
+            if (q1) {
+                q1++;
+                const char *q2 = strchr(q1, '"');
+                if (q2 && (q2 - q1) < (int)sizeof(tts_voice)) {
+                    memcpy(tts_voice, q1, q2 - q1);
+                    tts_voice[q2 - q1] = '\0';
+                    unified_log("tts_engine", LOG_LEVEL_INFO, "Loaded TTS voice: %s", tts_voice);
+                }
+            }
+        }
+    }
 }
 
 bool espeak_tts_init(int sample_rate) {
@@ -307,9 +326,11 @@ bool espeak_tts_init(int sample_rate) {
 
     espeak_SetSynthCallback(espeak_synth_callback);
 
-    if (espeak_SetVoiceByName("en") != EE_OK) {
+    if (espeak_SetVoiceByName(tts_voice) != EE_OK) {
         unified_log("tts_engine", LOG_LEVEL_WARN,
-                   "Failed to set eSpeak voice 'en', using default");
+                   "Failed to set eSpeak voice '%s', falling back to 'en'", tts_voice);
+        strcpy(tts_voice, "en");
+        espeak_SetVoiceByName("en");
     }
 
     int wpm = (int)(175.0f * tts_speed);
@@ -506,3 +527,27 @@ bool espeak_tts_get_enabled(void) { return tts_enabled; }
 int  espeak_tts_get_volume(void) { return tts_volume; }
 float espeak_tts_get_speed(void) { return tts_speed; }
 float espeak_tts_get_pitch(void) { return tts_pitch; }
+
+void espeak_tts_set_voice(const char *voice_name) {
+    if (!voice_name || strlen(voice_name) == 0) return;
+    if (strlen(voice_name) >= sizeof(tts_voice)) return;
+    if (strcmp(tts_voice, voice_name) == 0) return;
+
+    unified_log("tts_engine", LOG_LEVEL_INFO, "Setting TTS voice to '%s' (was '%s')", voice_name, tts_voice);
+    strncpy(tts_voice, voice_name, sizeof(tts_voice) - 1);
+    tts_voice[sizeof(tts_voice) - 1] = '\0';
+
+    if (initialized) {
+        if (espeak_SetVoiceByName(tts_voice) != EE_OK) {
+            unified_log("tts_engine", LOG_LEVEL_WARN,
+                       "Failed to set eSpeak voice '%s', reverting to 'en'", tts_voice);
+            strcpy(tts_voice, "en");
+            espeak_SetVoiceByName("en");
+        }
+    }
+
+    espeak_clear_buffer();
+    espeak_save_config();
+}
+
+const char *espeak_tts_get_voice(void) { return tts_voice; }

@@ -473,15 +473,14 @@ Key shared memory segments:
 
 ### shadow_control_t Fields (Feature-Specific)
 
-- `tts_voice` (uint8_t): eSpeak-NG voice index (0=en, 1=en-US, 2=en-GB-x-rp, 3=en-GB-scotland)
-- `feedback_mute_active` (uint8_t): 0=normal, 3=mic warning (Line In gated until button press)
+- `tts_voice` (uint8_t): eSpeak-NG voice index (0=en, 1=en-US, 2=en-GB-x-rp, 3=en-GB-scotland). JS bindings: `tts_set_voice(name)` / `tts_get_voice()`. Voice setting is hidden in UI when Flite engine is active.
+- `feedback_mute_active` (uint8_t): 0=normal, 1=ME audio muted, 2=all audio muted, 3=mic warning
 - `feedback_config` (uint8_t): Bit-packed feedback settings. Use `FEEDBACK_CFG_*` macros from `shadow_constants.h`:
   - bits 0-2: mic_warning_secs (0=off, 1-5=auto-dismiss seconds, 6=manual dismiss)
   - bit 3: `FEEDBACK_CFG_PROTECTION_ON` — feedback guard enabled
-  - bit 4: `FEEDBACK_CFG_JACK_WARNING` — warn on cable unplug while feedback-risk module active
-  - bits 5-7: reserved
-  - Default: `FEEDBACK_CFG_DEFAULT` (0x1A = guard on, jack warn on, mic warn 2s)
-  - 6 reserved bytes remain in `shadow_control_t`.
+  - bit 4: `FEEDBACK_CFG_EMERGENCY_MUTE` — emergency mute escalation enabled
+  - Default: `FEEDBACK_CFG_DEFAULT` (0x1A = guard on, emergency mute on, mic warn 2s)
+  - Persisted in `features.json`. 6 reserved bytes remain in `shadow_control_t`.
 
 ### Shadow UI Flags
 

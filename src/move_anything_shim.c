@@ -119,6 +119,10 @@ static unsigned char shadow_mailbox[4096] __attribute__((aligned(64))); /* Shado
 #define CC_STEP_UI_FIRST 16
 #define CC_STEP_UI_LAST 31
 
+/* Voice name table for TTS voice index (must match shadow_ui.c and eSpeak-NG lang/gmw/) */
+static const char *tts_voice_names[] = {"en", "en-US", "en-GB-x-rp", "en-GB-scotland"};
+static const int tts_voice_count = 4;
+
 /* Shadow structs from shadow_constants.h: shadow_control_t, shadow_ui_state_t, shadow_param_t */
 static shadow_control_t *shadow_control = NULL;
 static uint8_t shadow_display_mode = 0;
@@ -1970,6 +1974,7 @@ static void init_shadow_shm(void)
             shadow_control->tts_pitch = 110;    /* 110 Hz */
             shadow_control->tts_speed = 1.5f;   /* 1.5x speed */
             shadow_control->tts_engine = 0;     /* 0=espeak-ng (speak engine) */
+            shadow_control->tts_voice = 0;      /* 0=en (British English, default) */
             shadow_control->overlay_knobs_mode = OVERLAY_KNOBS_NATIVE; /* Native by default */
             shadow_control->tts_debounce_ms = 50; /* default debounce ms */
         }
@@ -2180,6 +2185,17 @@ static void shadow_check_screenreader(void)
             tts_set_volume(shadow_control->tts_volume);
             tts_set_speed(shadow_control->tts_speed);
             tts_set_pitch((float)shadow_control->tts_pitch);
+
+            /* Apply voice setting (eSpeak-NG only, Flite ignores) */
+            {
+                int vi = shadow_control->tts_voice;
+                if (vi >= 0 && vi < tts_voice_count) {
+                    const char *current_voice = tts_get_voice();
+                    if (strcmp(current_voice, tts_voice_names[vi]) != 0) {
+                        tts_set_voice(tts_voice_names[vi]);
+                    }
+                }
+            }
         }
 
         /* Speak the buffered message */
@@ -2241,6 +2257,16 @@ static void shadow_mix_audio(void)
             tts_set_volume(shadow_control->tts_volume);
             tts_set_speed(shadow_control->tts_speed);
             tts_set_pitch((float)shadow_control->tts_pitch);
+            /* Apply voice */
+            {
+                int vi = shadow_control->tts_voice;
+                if (vi >= 0 && vi < tts_voice_count) {
+                    const char *cur = tts_get_voice();
+                    if (strcmp(cur, tts_voice_names[vi]) != 0) {
+                        tts_set_voice(tts_voice_names[vi]);
+                    }
+                }
+            }
             tts_speak("Text to speech is working");
             tts_test_done = true;
         }
@@ -2816,10 +2842,22 @@ void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
             shadow_control->tts_speed = tts_get_speed();
             shadow_control->tts_pitch = (uint16_t)tts_get_pitch();
             shadow_control->tts_engine = (strcmp(tts_get_engine(), "flite") == 0) ? 1 : 0;
+            /* Sync loaded voice back to shared memory so TTS sync block
+             * doesn't overwrite the saved preference with the default */
+            {
+                const char *loaded_voice = tts_get_voice();
+                for (int i = 0; i < tts_voice_count; i++) {
+                    if (strcmp(loaded_voice, tts_voice_names[i]) == 0) {
+                        shadow_control->tts_voice = (uint8_t)i;
+                        break;
+                    }
+                }
+            }
             unified_log("shim", LOG_LEVEL_INFO,
-                       "TTS initialized, synced to shared memory: enabled=%s speed=%.2f pitch=%.1f volume=%d",
+                       "TTS initialized, synced to shared memory: enabled=%s speed=%.2f pitch=%.1f volume=%d voice=%s",
                        shadow_control->tts_enabled ? "ON" : "OFF",
-                       shadow_control->tts_speed, (float)shadow_control->tts_pitch, shadow_control->tts_volume);
+                       shadow_control->tts_speed, (float)shadow_control->tts_pitch, shadow_control->tts_volume,
+                       tts_voice_names[shadow_control->tts_voice]);
         }
 #endif
 

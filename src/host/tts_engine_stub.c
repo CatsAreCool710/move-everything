@@ -81,3 +81,13 @@ const char *tts_get_engine(void)
 {
     return "espeak";
 }
+
+void tts_set_voice(const char *voice_name)
+{
+    (void)voice_name;
+}
+
+const char *tts_get_voice(void)
+{
+    return "en";
+}

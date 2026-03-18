@@ -214,14 +214,10 @@ MATH_FLAGS="-funsafe-math-optimizations -fno-math-errno"  # FMA fusion, reciproc
 | Target | `ARCH_FLAGS` | `MATH_FLAGS` | `-flto` | Notes |
 |--------|:---:|:---:|:---:|-------|
 | `move-anything` (host) | Yes | Yes | No | |
-| `move-anything-shim.so` | Yes | Yes | Yes | Upgraded to `-O3` with LTO |
+| `move-anything-shim.so` | Yes | Yes | Yes | Also includes `-O3` (previously compiled at `-O0`) |
 | `move-anything-web-shim.so` | Yes | No | No | No float math |
 | `shadow_ui` | Yes | No | No | Links QuickJS |
-| `shadow_poc` | Yes | Yes | No | Reference example |
-| `unified-log` | Yes | No | No | CLI tool |
 | `link-subscriber` (C++) | Yes | No | No | No DSP |
-| `midi_inject_test` | Yes | No | No | Test tool |
-| `display-server` | Yes | No | No | SSE display streaming |
 | DSP modules (chain, freeverb, linein, etc.) | Yes | Yes | No | Single-file .so, LTO has no cross-TU benefit |
 | `arc4random_compat.o` | No | No | No | Intentionally `-O0` |
 | `libpcaudio.so.0` (stub) | No | No | No | Stub library |

@@ -57,4 +57,10 @@ void tts_set_engine(const char *engine_name);
 /* Get current TTS engine name */
 const char *tts_get_engine(void);
 
+/* Set TTS voice variant (eSpeak-NG only, e.g. "en", "en-US", "en-GB-x-rp") */
+void tts_set_voice(const char *voice_name);
+
+/* Get current TTS voice name */
+const char *tts_get_voice(void);
+
 #endif /* TTS_ENGINE_H */

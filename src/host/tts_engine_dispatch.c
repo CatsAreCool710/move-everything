@@ -32,6 +32,8 @@ extern bool espeak_tts_get_enabled(void);
 extern int  espeak_tts_get_volume(void);
 extern float espeak_tts_get_speed(void);
 extern float espeak_tts_get_pitch(void);
+extern void espeak_tts_set_voice(const char *voice_name);
+extern const char *espeak_tts_get_voice(void);
 
 /* Flite backend */
 extern bool flite_tts_init(int sample_rate);
@@ -95,6 +97,7 @@ static void save_engine_choice(void) {
     float speed = 1.0f;
     float pitch = 110.0f;
     int volume = 70;
+    char voice[32] = "en";
 
     FILE *f = fopen(config_path, "r");
     if (f) {
@@ -111,6 +114,22 @@ static void save_engine_choice(void) {
         if (p) { p = strchr(p, ':'); if (p) pitch = strtof(p + 1, NULL); }
         p = strstr(buf, "\"volume\"");
         if (p) { p = strchr(p, ':'); if (p) volume = atoi(p + 1); }
+        /* Preserve voice setting across engine switches */
+        p = strstr(buf, "\"voice\"");
+        if (p) {
+            p = strchr(p, ':');
+            if (p) {
+                const char *q1 = strchr(p, '"');
+                if (q1) {
+                    q1++;
+                    const char *q2 = strchr(q1, '"');
+                    if (q2 && (q2 - q1) < (int)sizeof(voice)) {
+                        memcpy(voice, q1, q2 - q1);
+                        voice[q2 - q1] = '\0';
+                    }
+                }
+            }
+        }
     }
 
     /* Write back with engine field */
@@ -123,6 +142,7 @@ static void save_engine_choice(void) {
     const char *engine_name = (active_engine == ENGINE_FLITE) ? "flite" : "espeak";
     fprintf(f, "{\n");
     fprintf(f, "  \"engine\": \"%s\",\n", engine_name);
+    fprintf(f, "  \"voice\": \"%s\",\n", voice);
     fprintf(f, "  \"speed\": %.2f,\n", speed);
     fprintf(f, "  \"pitch\": %.1f,\n", pitch);
     fprintf(f, "  \"volume\": %d\n", volume);
@@ -364,4 +384,27 @@ void tts_set_engine(const char *engine_name) {
 
 const char *tts_get_engine(void) {
     return (active_engine == ENGINE_FLITE) ? "flite" : "espeak";
+}
+
+void tts_set_voice(const char *voice_name) {
+#if ENABLE_SCREEN_READER
+    if (!voice_name) return;
+    /* Voice selection only applies to eSpeak-NG; Flite has a single voice (cmu_us_kal) */
+    if (active_engine == ENGINE_ESPEAK) {
+        espeak_tts_set_voice(voice_name);
+    }
+#else
+    (void)voice_name;
+#endif
+}
+
+const char *tts_get_voice(void) {
+#if ENABLE_SCREEN_READER
+    if (active_engine == ENGINE_FLITE) {
+        return "en-US";  /* Flite cmu_us_kal is US English */
+    }
+    return espeak_tts_get_voice();
+#else
+    return "en";
+#endif
 }

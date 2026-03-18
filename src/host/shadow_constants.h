@@ -135,22 +135,22 @@ typedef struct shadow_control_t {
     volatile uint8_t pad_block;            /* 1=suppress pad notes (68-99) from reaching Move */
     /* Fields for TTS voice selection and feedback protection */
     volatile uint8_t tts_voice;            /* 0=en, 1=en-US, 2=en-GB-x-rp, 3=en-GB-scotland */
-    volatile uint8_t feedback_mute_active; /* 0=normal, 3=mic warning (Line In gated) */
+    volatile uint8_t feedback_mute_active; /* 0=normal, 1=ME muted, 2=all muted, 3=mic warning */
     volatile uint8_t feedback_config;      /* Bit-packed feedback settings (see FEEDBACK_CFG_* below)
                                             * bits 0-2: mic_warning (0=off, 1-5=auto-dismiss secs, 6=manual)
                                             * bit 3:    protection_on (feedback guard enabled)
-                                            * bit 4:    jack_warning (warn on cable unplug)
-                                            * bits 5-7: reserved */
+                                            * bit 4:    emergency_mute_on
+                                            * bits 5-7: reserved for future feedback settings */
     volatile uint8_t reserved[6];
 } shadow_control_t;
 
 /* feedback_config bit-pack accessors */
 #define FEEDBACK_CFG_MIC_WARN_MASK    0x07  /* bits 0-2: mic warning seconds (0-6) */
 #define FEEDBACK_CFG_PROTECTION_ON    0x08  /* bit 3: feedback guard enabled */
-#define FEEDBACK_CFG_JACK_WARNING     0x10  /* bit 4: warn on cable unplug */
+#define FEEDBACK_CFG_EMERGENCY_MUTE   0x10  /* bit 4: emergency mute escalation enabled */
 #define FEEDBACK_CFG_MIC_WARN(cfg)    ((cfg) & FEEDBACK_CFG_MIC_WARN_MASK)
-#define FEEDBACK_CFG_DEFAULT          (FEEDBACK_CFG_PROTECTION_ON | FEEDBACK_CFG_JACK_WARNING | 2)
-                                      /* Default: guard on, jack warn on, mic warn 2s = 0x1A */
+#define FEEDBACK_CFG_DEFAULT          (FEEDBACK_CFG_PROTECTION_ON | FEEDBACK_CFG_EMERGENCY_MUTE | 2)
+                                      /* Default: guard on, emergency mute on, mic warn 2s */
 
 /*
  * UI state structure for slot information.

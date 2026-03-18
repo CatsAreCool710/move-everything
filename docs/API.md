@@ -163,6 +163,20 @@ host_remove_dir(path)         // Recursively remove directory, returns bool
 
 // Screen reader
 host_announce_screenreader(text) // Speak text via TTS (if screen reader enabled)
+tts_set_enabled(bool)         // Enable/disable screen reader
+tts_get_enabled()             // Returns bool - screen reader enabled state
+tts_set_engine(name)          // Set TTS engine: "espeak" or "flite"
+tts_get_engine()              // Returns string - current engine name
+tts_set_voice(name)           // Set eSpeak-NG voice: "en", "en-US", "en-GB-x-rp", "en-GB-scotland"
+tts_get_voice()               // Returns string - current voice name
+tts_set_speed(float)          // Set speech speed (0.5 - 6.0)
+tts_get_speed()               // Returns float - current speed
+tts_set_pitch(float)          // Set pitch in Hz (80 - 180)
+tts_get_pitch()               // Returns float - current pitch
+tts_set_volume(int)           // Set volume (0 - 100)
+tts_get_volume()              // Returns int - current volume
+tts_set_debounce(int)         // Set debounce in ms (0 - 1000)
+tts_get_debounce()            // Returns int - current debounce
 
 // Tool module lifecycle
 host_exit_module()            // Exit current tool module, return to tools menu (tool modules only)

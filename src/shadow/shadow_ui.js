@@ -725,7 +725,10 @@ const GLOBAL_SETTINGS_SECTIONS = [
             { key: "screen_reader_speed", label: "Voice Speed", type: "float", min: 0.5, max: 6.0, step: 0.1 },
             { key: "screen_reader_pitch", label: "Voice Pitch", type: "float", min: 80, max: 180, step: 5 },
             { key: "screen_reader_volume", label: "Voice Vol", type: "int", min: 0, max: 100, step: 5 },
-            { key: "screen_reader_debounce", label: "Debounce", type: "int", min: 0, max: 1000, step: 50 }
+            { key: "screen_reader_debounce", label: "Debounce", type: "int", min: 0, max: 1000, step: 50 },
+            { key: "screen_reader_voice", label: "Voice", type: "enum",
+              options: ["English", "English US", "English RP", "Scottish"],
+              values: ["en", "en-US", "en-GB-x-rp", "en-GB-scotland"] }
         ]
     },
     {
@@ -756,6 +759,17 @@ let globalSettingsSectionIndex = 0;
 let globalSettingsInSection = false;
 let globalSettingsItemIndex = 0;
 let globalSettingsEditing = false;
+
+/* Get filtered items for a settings section (hides voice when Flite active) */
+function getSettingSectionItems(section) {
+    if (section.id === "accessibility") {
+        const engine = typeof tts_get_engine === "function" ? tts_get_engine() : "espeak";
+        if (engine === "flite") {
+            return section.items.filter(i => i.key !== "screen_reader_voice");
+        }
+    }
+    return section.items;
+}
 
 /* Tools menu state */
 let toolsMenuIndex = 0;
@@ -7495,6 +7509,14 @@ function getMasterFxSettingValue(setting) {
         }
         return "300ms";
     }
+    if (setting.key === "screen_reader_voice") {
+        if (typeof tts_get_voice === "function") {
+            const v = tts_get_voice();
+            const idx = setting.values.indexOf(v);
+            return idx >= 0 ? setting.options[idx] : v;
+        }
+        return "English";
+    }
     if (setting.key === "set_pages_enabled") {
         return (typeof set_pages_get === "function" && set_pages_get()) ? "On" : "Off";
     }
@@ -7631,6 +7653,16 @@ function adjustMasterFxSetting(setting, delta) {
         val += delta * setting.step;
         val = Math.max(setting.min, Math.min(setting.max, val));
         tts_set_debounce(Math.round(val));
+        return;
+    }
+
+    if (setting.key === "screen_reader_voice" && typeof tts_set_voice === "function") {
+        const current = typeof tts_get_voice === "function" ? tts_get_voice() : "en";
+        const values = setting.values;
+        let idx = values.indexOf(current);
+        if (idx < 0) idx = 0;
+        const nextIdx = (idx + (delta > 0 ? 1 : values.length - 1)) % values.length;
+        tts_set_voice(values[nextIdx]);
         return;
     }
 
@@ -8057,16 +8089,17 @@ function handleJog(delta) {
                 announce(frame.items[frame.selectedIndex].title);
             } else if (globalSettingsInSection) {
                 const section = GLOBAL_SETTINGS_SECTIONS[globalSettingsSectionIndex];
+                const items = getSettingSectionItems(section);
                 if (globalSettingsEditing) {
                     /* Adjust value with jog */
-                    const item = section.items[globalSettingsItemIndex];
+                    const item = items[globalSettingsItemIndex];
                     adjustMasterFxSetting(item, delta);
                     const newVal = getMasterFxSettingValue(item);
                     announceParameter(item.label, newVal);
                 } else {
                     /* Navigate items within section */
-                    globalSettingsItemIndex = Math.max(0, Math.min(section.items.length - 1, globalSettingsItemIndex + delta));
-                    const item = section.items[globalSettingsItemIndex];
+                    globalSettingsItemIndex = Math.max(0, Math.min(items.length - 1, globalSettingsItemIndex + delta));
+                    const item = items[globalSettingsItemIndex];
                     const value = item.type === "action" ? "" : getMasterFxSettingValue(item);
                     announceMenuItem(item.label, value);
                 }
@@ -8976,7 +9009,8 @@ function handleSelect() {
                 }
             } else if (globalSettingsInSection) {
                 const section = GLOBAL_SETTINGS_SECTIONS[globalSettingsSectionIndex];
-                const item = section.items[globalSettingsItemIndex];
+                const items = getSettingSectionItems(section);
+                const item = items[globalSettingsItemIndex];
                 if (globalSettingsEditing) {
                     /* Exit editing */
                     globalSettingsEditing = false;
@@ -9440,7 +9474,8 @@ function handleBack() {
                 globalSettingsEditing = false;
                 needsRedraw = true;
                 const section = GLOBAL_SETTINGS_SECTIONS[globalSettingsSectionIndex];
-                const item = section.items[globalSettingsItemIndex];
+                const items = getSettingSectionItems(section);
+                const item = items[globalSettingsItemIndex];
                 const val = getMasterFxSettingValue(item);
                 announce(item.label + (val ? ", " + val : ""));
             } else if (globalSettingsInSection) {
@@ -10327,6 +10362,7 @@ function drawHelpDetail() {
         get() { return globalSettingsEditing; }, enumerable: true
     });
     _ctx.GLOBAL_SETTINGS_SECTIONS = GLOBAL_SETTINGS_SECTIONS;
+    _ctx.getSettingSectionItems = (...args) => getSettingSectionItems(...args);
 
     /* View transitions - bound lazily since some may be defined after this block */
     _ctx.enterChainEdit = (...args) => enterChainEdit(...args);
