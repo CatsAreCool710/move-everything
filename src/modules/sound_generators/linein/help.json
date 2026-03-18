@@ -1,0 +1,64 @@
+{
+  "children": [
+    {
+      "title": "Overview",
+      "lines": [
+        "Routes audio from the",
+        "mic/line-in jack through",
+        "Move Everything's chain.",
+        "",
+        "Supports Line, Guitar,",
+        "and Phono input types",
+        "with dedicated signal",
+        "conditioning for each."
+      ]
+    },
+    {
+      "title": "Input Types",
+      "lines": [
+        "Line: Balanced input",
+        " for synths, mixers.",
+        "",
+        "Guitar: Hi-Z input",
+        " for guitars, basses.",
+        "",
+        "Phono: RIAA EQ for",
+        " turntables/vinyl."
+      ]
+    },
+    {
+      "title": "Signal Conditioning",
+      "lines": [
+        "Input/Output Trim",
+        "Noise Gate (threshold,",
+        " attack, hold, release)",
+        "High-pass filter",
+        "Safety limiter",
+        "Cable compensation",
+        "Soft clip",
+        "Hum notch (50/60 Hz)"
+      ]
+    },
+    {
+      "title": "Feedback Warning",
+      "lines": [
+        "When no cable is in the",
+        "mic/line-in jack, the",
+        "internal microphone may",
+        "be active. This creates",
+        "a feedback loop: mic ->",
+        "Line In -> speaker ->",
+        "mic.",
+        "",
+        "If Feedback Guard is on",
+        "(Settings > Safety),",
+        "audio is gated until",
+        "you dismiss the warning.",
+        "",
+        "Plug in a cable to",
+        "disable the internal",
+        "mic and avoid feedback."
+      ]
+    }
+  ]
+}

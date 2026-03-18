@@ -1856,6 +1856,86 @@ static JSValue js_tts_get_debounce(JSContext *ctx, JSValueConst this_val,
     return JS_NewInt32(ctx, shadow_control->tts_debounce_ms);
 }
 
+/* feedback_protection_get() -> bool - Read from bit-packed feedback_config */
+static JSValue js_feedback_protection_get(JSContext *ctx, JSValueConst this_val,
+                                           int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_NewBool(ctx, 1);
+    return JS_NewBool(ctx, (shadow_control->feedback_config & FEEDBACK_CFG_PROTECTION_ON) != 0);
+}
+
+/* feedback_protection_set(bool) - Write to bit-packed feedback_config */
+static JSValue js_feedback_protection_set(JSContext *ctx, JSValueConst this_val,
+                                           int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1 || !shadow_control) return JS_UNDEFINED;
+    if (JS_ToBool(ctx, argv[0]))
+        shadow_control->feedback_config |= FEEDBACK_CFG_PROTECTION_ON;
+    else
+        shadow_control->feedback_config &= ~FEEDBACK_CFG_PROTECTION_ON;
+    return JS_UNDEFINED;
+}
+
+/* feedback_mic_warning_get() -> int (0=off, 1-5=seconds, 6=manual) */
+static JSValue js_feedback_mic_warning_get(JSContext *ctx, JSValueConst this_val,
+                                            int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_NewInt32(ctx, 2);
+    return JS_NewInt32(ctx, FEEDBACK_CFG_MIC_WARN(shadow_control->feedback_config));
+}
+
+/* feedback_mic_warning_set(int) - 0=off, 1-5=seconds, 6=manual */
+static JSValue js_feedback_mic_warning_set(JSContext *ctx, JSValueConst this_val,
+                                            int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1 || !shadow_control) return JS_UNDEFINED;
+    int val = 0;
+    JS_ToInt32(ctx, &val, argv[0]);
+    if (val < 0) val = 0;
+    if (val > 6) val = 6;
+    shadow_control->feedback_config = (shadow_control->feedback_config & ~FEEDBACK_CFG_MIC_WARN_MASK)
+                                    | (uint8_t)val;
+    return JS_UNDEFINED;
+}
+
+/* feedback_mute_active_get() -> int - Poll emergency mute state (0=normal, 1=ME muted, 2=all) */
+static JSValue js_feedback_mute_active_get(JSContext *ctx, JSValueConst this_val,
+                                            int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_NewInt32(ctx, 0);
+    return JS_NewInt32(ctx, shadow_control->feedback_mute_active);
+}
+
+/* feedback_mute_dismiss() - Reset emergency mute state */
+static JSValue js_feedback_mute_dismiss(JSContext *ctx, JSValueConst this_val,
+                                         int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (shadow_control) {
+        shadow_control->feedback_mute_active = 0;
+    }
+    return JS_UNDEFINED;
+}
+
+/* feedback_jack_warning_get() -> bool - Read bit 5 from feedback_config */
+static JSValue js_feedback_jack_warning_get(JSContext *ctx, JSValueConst this_val,
+                                             int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_NewBool(ctx, 1);
+    return JS_NewBool(ctx, (shadow_control->feedback_config & FEEDBACK_CFG_JACK_WARNING) != 0);
+}
+
+/* feedback_jack_warning_set(bool) - Write bit 5 to feedback_config */
+static JSValue js_feedback_jack_warning_set(JSContext *ctx, JSValueConst this_val,
+                                             int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1 || !shadow_control) return JS_UNDEFINED;
+    if (JS_ToBool(ctx, argv[0]))
+        shadow_control->feedback_config |= FEEDBACK_CFG_JACK_WARNING;
+    else
+        shadow_control->feedback_config &= ~FEEDBACK_CFG_JACK_WARNING;
+    return JS_UNDEFINED;
+}
+
 /* overlay_knobs_set_mode(mode) - Write to shared memory (0=shift, 1=jog_touch, 2=off, 3=native) */
 static JSValue js_overlay_knobs_set_mode(JSContext *ctx, JSValueConst this_val,
                                           int argc, JSValueConst *argv) {
@@ -2210,6 +2290,17 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     /* Register preview player functions */
     JS_SetPropertyStr(ctx, global_obj, "host_preview_play", JS_NewCFunction(ctx, js_host_preview_play, "host_preview_play", 1));
     JS_SetPropertyStr(ctx, global_obj, "host_preview_stop", JS_NewCFunction(ctx, js_host_preview_stop, "host_preview_stop", 0));
+
+    /* Register feedback protection functions */
+    JS_SetPropertyStr(ctx, global_obj, "feedback_protection_get", JS_NewCFunction(ctx, js_feedback_protection_get, "feedback_protection_get", 0));
+    JS_SetPropertyStr(ctx, global_obj, "feedback_protection_set", JS_NewCFunction(ctx, js_feedback_protection_set, "feedback_protection_set", 1));
+    /* Emergency mute removed — per-slot limiter + global safety are sufficient */
+    JS_SetPropertyStr(ctx, global_obj, "feedback_mute_active_get", JS_NewCFunction(ctx, js_feedback_mute_active_get, "feedback_mute_active_get", 0));
+    JS_SetPropertyStr(ctx, global_obj, "feedback_mute_dismiss", JS_NewCFunction(ctx, js_feedback_mute_dismiss, "feedback_mute_dismiss", 0));
+    JS_SetPropertyStr(ctx, global_obj, "feedback_mic_warning_get", JS_NewCFunction(ctx, js_feedback_mic_warning_get, "feedback_mic_warning_get", 0));
+    JS_SetPropertyStr(ctx, global_obj, "feedback_mic_warning_set", JS_NewCFunction(ctx, js_feedback_mic_warning_set, "feedback_mic_warning_set", 1));
+    JS_SetPropertyStr(ctx, global_obj, "feedback_jack_warning_get", JS_NewCFunction(ctx, js_feedback_jack_warning_get, "feedback_jack_warning_get", 0));
+    JS_SetPropertyStr(ctx, global_obj, "feedback_jack_warning_set", JS_NewCFunction(ctx, js_feedback_jack_warning_set, "feedback_jack_warning_set", 1));
 
     /* Register sampler control functions */
     JS_SetPropertyStr(ctx, global_obj, "host_sampler_start", JS_NewCFunction(ctx, js_host_sampler_start, "host_sampler_start", 1));

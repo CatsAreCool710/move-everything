@@ -199,7 +199,7 @@ if needs_rebuild build/move-anything-shim.so \
     src/host/shadow_resample.h src/host/shadow_overlay.h src/host/shadow_pin_scanner.h \
     src/host/shadow_led_queue.h src/host/shadow_fd_trace.h src/host/shadow_state.h \
     src/host/plugin_api_v1.h src/host/unified_log.h src/host/tts_engine.h \
-    src/host/link_audio.h; then
+    src/host/link_audio.h src/host/feedback_detect.h src/host/feedback_detect.c; then
     echo "Building shim..."
     "${CROSS_PREFIX}gcc" -g3 -O3 -shared -fPIC -flto $ARCH_FLAGS $MATH_FLAGS \
         -o build/move-anything-shim.so \
@@ -218,6 +218,7 @@ if needs_rebuild build/move-anything-shim.so \
         src/host/shadow_state.c \
         src/host/shadow_midi.c \
         src/host/unified_log.c \
+        src/host/feedback_detect.c \
         $SHIM_TTS_SRC \
         $SHIM_DEFINES \
         $SHIM_INCLUDES \

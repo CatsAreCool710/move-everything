@@ -475,6 +475,13 @@ typedef struct chain_instance {
     /* Mute countdown after patch switch */
     int mute_countdown;
 
+    /* Feedback gate: 1=audio gated until user dismisses mic warning */
+    int feedback_gate;
+
+    /* Per-slot feedback limiter (Layer 1) */
+    int feedback_risk_active;       /* 1 = this slot reads AUDIO_IN */
+    float feedback_gain;            /* 1.0 = unity, reduced when output is hot */
+
     /* Recording state */
     int recording;
     FILE *wav_file;
@@ -6492,6 +6499,16 @@ static int v2_load_from_patch_info(chain_instance_t *inst, patch_info_t *patch) 
     }
 
     inst->mute_countdown = MUTE_BLOCKS_AFTER_SWITCH;
+    inst->feedback_gain = 1.0f;
+    /* Check if the loaded synth reports feedback_risk */
+    inst->feedback_risk_active = 0;
+    if (inst->synth_plugin_v2 && inst->synth_plugin_v2->get_param) {
+        char risk_buf[4] = {0};
+        int rlen = inst->synth_plugin_v2->get_param(inst->synth_instance, "feedback_risk", risk_buf, sizeof(risk_buf));
+        if (rlen > 0 && risk_buf[0] == '1') {
+            inst->feedback_risk_active = 1;
+        }
+    }
 
     snprintf(msg, sizeof(msg), "Patch loaded: %s", patch->name);
     v2_chain_log(inst, msg);
@@ -6796,6 +6813,10 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
             update_master_preset(index, colon + 1);
         }
     }
+    else if (strcmp(key, "feedback_gate") == 0) {
+        /* Set/clear feedback gate (mic warning acknowledgment) */
+        inst->feedback_gate = (val && val[0] == '1') ? 1 : 0;
+    }
     else if (strncmp(key, "synth:", 6) == 0) {
         const char *subkey = key + 6;
         /* Intercept module change to swap synth dynamically */
@@ -6806,6 +6827,18 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
             smoother_reset(&inst->synth_smoother);  /* Reset smoother on module change */
             if (val && val[0] != '\0' && strcmp(val, "none") != 0) {
                 v2_load_synth(inst, val);
+                /* Check feedback_risk for per-slot limiter */
+                inst->feedback_gain = 1.0f;
+                inst->feedback_risk_active = 0;
+                if (inst->synth_plugin_v2 && inst->synth_plugin_v2->get_param) {
+                    char risk_buf[4] = {0};
+                    int rlen = inst->synth_plugin_v2->get_param(
+                        inst->synth_instance, "feedback_risk", risk_buf, sizeof(risk_buf));
+                    if (rlen > 0 && risk_buf[0] == '1') {
+                        inst->feedback_risk_active = 1;
+                        v2_chain_log(inst, "Synth has feedback_risk=1, per-slot limiter active");
+                    }
+                }
             } else {
                 /* Clearing synth - also clear knob mappings */
                 inst->knob_mapping_count = 0;
@@ -8197,6 +8230,12 @@ static void v2_render_block(void *instance, int16_t *out_interleaved_lr, int fra
         return;
     }
 
+    /* Feedback gate: silence output until user dismisses mic warning */
+    if (inst->feedback_gate) {
+        memset(out_interleaved_lr, 0, frames * 2 * sizeof(int16_t));
+        return;
+    }
+
     /* Update smoothed parameters and send interpolated values to sub-plugins */
     {
         /* Synth smoother */
@@ -8247,6 +8286,37 @@ static void v2_render_block(void *instance, int16_t *out_interleaved_lr, int fra
         inst->synth_plugin->render_block(out_interleaved_lr, frames);
     } else {
         memset(out_interleaved_lr, 0, frames * 2 * sizeof(int16_t));
+    }
+
+    /* Layer 1: Per-slot feedback limiter.
+     * Only active for feedback_risk slots (e.g., Line In).
+     * If the slot's output exceeds -12 dBFS, reduce gain for this slot only.
+     * Never affects other synth slots. */
+    if (inst->feedback_risk_active) {
+        float sum = 0.0f;
+        for (int i = 0; i < frames * 2; i++) {
+            float s = (float)out_interleaved_lr[i];
+            sum += s * s;
+        }
+        float rms = sqrtf(sum / (float)(frames * 2));
+        float rms_db = (rms > 0.001f) ? 20.0f * log10f(rms / 32768.0f) : -96.0f;
+
+        if (rms_db > -12.0f) {
+            if (inst->feedback_gain > 0.999f) {
+                v2_chain_log(inst, "Feedback limiter activated (slot output > -12 dBFS)");
+            }
+            inst->feedback_gain *= 0.8f;
+            if (inst->feedback_gain < 0.01f) inst->feedback_gain = 0.01f;
+        } else if (inst->feedback_gain < 1.0f) {
+            inst->feedback_gain += 0.0005f;
+            if (inst->feedback_gain > 1.0f) inst->feedback_gain = 1.0f;
+        }
+
+        if (inst->feedback_gain < 0.999f) {
+            for (int i = 0; i < frames * 2; i++) {
+                out_interleaved_lr[i] = (int16_t)((float)out_interleaved_lr[i] * inst->feedback_gain);
+            }
+        }
     }
 
     /* In external_fx_mode, output raw synth only — skip inject and FX.

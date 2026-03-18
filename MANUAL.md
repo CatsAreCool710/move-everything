@@ -559,6 +559,47 @@ Can be enabled during installation with `--enable-screen-reader`.
 
 ---
 
+## Feedback Protection
+
+Move Everything includes automatic feedback detection and suppression to protect against audio feedback loops when the internal microphone is active.
+
+### How It Works
+
+When no cable is plugged into Move's mic/line-in jack, the internal microphone may be the active audio input. If a Line In module is loaded in a shadow chain slot, audio from the mic is processed and output to the speaker, creating a potential feedback loop.
+
+**Passive protection:**
+- Monitors the mic/line-in jack state via hardware CC 114
+- Warns when the internal mic is likely active and feedback guard is enabled. When the screen reader is active, the warning is also spoken.
+
+**Active protection:**
+- Per-slot output limiter: monitors the output of feedback-risk modules (e.g., Line In) and reduces gain when it exceeds -12 dBFS. Never affects other synth slots.
+- Global safety net: monitors total audio output and applies gain reduction when sustained loud output is detected. Context-aware thresholds: tighter when a feedback loop is possible (Line In loaded, sampler source = ME, or resample bridge active).
+- Screen reader speech is not affected by feedback suppression (TTS bypasses all protection).
+
+**Line In load gating:**
+- When a module using audio input (e.g., Line In) is loaded and the internal mic may be active, audio is gated until you press any button
+- A visual warning "! Mic Active" appears, and screen reader announces "Mic active. Press any button."
+- Press any button to dismiss — the button also processes normally (no input trapping)
+- A small "M" corner indicator shows briefly after dismiss (configurable duration via Mic Warning setting)
+
+**Recovery:**
+- Per-slot gain and global safety gain automatically recover when audio levels drop below threshold
+
+### Settings
+
+Available in **Global Settings > Safety**:
+- **Feedback Guard**: Master enable/disable for feedback protection (default: On)
+- **Mic Warning**: Line In load gate timing — Off, 1-5 seconds (corner indicator duration after dismiss), or Manual. Default: 2s. Hidden when Feedback Guard off.
+- **Jack Warning**: Warn when cable is unplugged while a feedback-risk module is active (default: On, hidden when Feedback Guard off)
+
+### Recommendations
+
+- Plug in a cable to the mic/line-in jack to disable the internal microphone
+- When using the resample bridge with mic input, set mode to **Replace** (Mix mode is automatically blocked)
+- Set monitoring to **Off** in Move's sampler when using ME audio sources
+
+---
+
 ## Display Mirror
 
 Stream Move's 128x64 OLED display to any browser on your network in real time. Useful for remote monitoring, screen capture, or development.

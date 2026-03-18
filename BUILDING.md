@@ -214,7 +214,7 @@ MATH_FLAGS="-funsafe-math-optimizations -fno-math-errno"  # FMA fusion, reciproc
 | Target | `ARCH_FLAGS` | `MATH_FLAGS` | `-flto` | Notes |
 |--------|:---:|:---:|:---:|-------|
 | `move-anything` (host) | Yes | Yes | No | |
-| `move-anything-shim.so` | Yes | Yes | Yes | Also includes `-O3` (previously compiled at `-O0`) |
+| `move-anything-shim.so` | Yes | Yes | Yes | Upgraded to `-O3` with LTO. Includes `feedback_detect.c` |
 | `move-anything-web-shim.so` | Yes | No | No | No float math |
 | `shadow_ui` | Yes | No | No | Links QuickJS |
 | `link-subscriber` (C++) | Yes | No | No | No DSP |

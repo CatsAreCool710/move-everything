@@ -744,6 +744,16 @@ const GLOBAL_SETTINGS_SECTIONS = [
         ]
     },
     {
+        id: "safety", label: "Safety",
+        items: [
+            { key: "feedback_protection", label: "Feedback Guard", type: "bool" },
+            { key: "feedback_mic_warning", label: "Mic Warning", type: "enum",
+              options: ["Off", "1s", "2s", "3s", "4s", "5s", "Manual"],
+              values: [0, 1, 2, 3, 4, 5, 6] },
+            { key: "feedback_jack_warning", label: "Jack Warning", type: "bool" }
+        ]
+    },
+    {
         id: "updates", label: "Updates",
         items: [
             { key: "check_updates", label: "[Check Updates]", type: "action" },
@@ -760,12 +770,18 @@ let globalSettingsInSection = false;
 let globalSettingsItemIndex = 0;
 let globalSettingsEditing = false;
 
-/* Get filtered items for a settings section (hides voice when Flite active) */
+/* Get filtered items for a settings section (hides conditional settings) */
 function getSettingSectionItems(section) {
     if (section.id === "accessibility") {
         const engine = typeof tts_get_engine === "function" ? tts_get_engine() : "espeak";
         if (engine === "flite") {
             return section.items.filter(i => i.key !== "screen_reader_voice");
+        }
+    }
+    if (section.id === "safety") {
+        const guardOn = typeof feedback_protection_get === "function" ? feedback_protection_get() : true;
+        if (!guardOn) {
+            return section.items.filter(i => i.key === "feedback_protection");
         }
     }
     return section.items;
@@ -1467,6 +1483,8 @@ let moduleUiLoadError = false;   // True if load failed
 let warningActive = false;  // True when showing warning overlay
 let warningTitle = "";      // Warning overlay title
 let warningLines = [];      // Wrapped warning message lines
+let micWarningAnnounced = false;     // One-time TTS announce for mic warning
+let micWarningDismissedAt = 0;       // Timestamp when gate was dismissed (for corner indicator)
 let warningShownForSlots = new Set();  // Track which chain slots have shown warnings
 let warningShownForMidiFxSlots = new Set();  // Track which slots have shown MIDI FX warnings
 let warningShownForMasterFx = new Set();  // Track which Master FX slots have shown warnings
@@ -7539,6 +7557,21 @@ function getMasterFxSettingValue(setting) {
     if (setting.key === "filebrowser_enabled") {
         return filebrowserEnabled ? "On" : "Off";
     }
+    if (setting.key === "feedback_protection") {
+        return (typeof feedback_protection_get === "function" && feedback_protection_get()) ? "On" : "Off";
+    }
+
+    if (setting.key === "feedback_jack_warning") {
+        return (typeof feedback_jack_warning_get === "function" && feedback_jack_warning_get()) ? "On" : "Off";
+    }
+    if (setting.key === "feedback_mic_warning") {
+        if (typeof feedback_mic_warning_get === "function") {
+            const val = feedback_mic_warning_get();
+            const idx = setting.values.indexOf(val);
+            return idx >= 0 ? setting.options[idx] : val + "";
+        }
+        return "2s";
+    }
     return "-";
 }
 
@@ -7730,6 +7763,28 @@ function adjustMasterFxSetting(setting, delta) {
             ? wrapText("On. Access at http://move.local:404", 18)
             : ["Off."];
         warningActive = true;
+        return;
+    }
+
+    if (setting.key === "feedback_protection" && typeof feedback_protection_set === "function") {
+        const current = typeof feedback_protection_get === "function" ? feedback_protection_get() : true;
+        feedback_protection_set(!current);
+        return;
+    }
+
+    if (setting.key === "feedback_jack_warning" && typeof feedback_jack_warning_set === "function") {
+        const current = typeof feedback_jack_warning_get === "function" ? feedback_jack_warning_get() : true;
+        feedback_jack_warning_set(!current);
+        return;
+    }
+
+    if (setting.key === "feedback_mic_warning" && typeof feedback_mic_warning_set === "function") {
+        const current = typeof feedback_mic_warning_get === "function" ? feedback_mic_warning_get() : 2;
+        const values = setting.values;
+        let idx = values.indexOf(current);
+        if (idx < 0) idx = 0;
+        const nextIdx = (idx + (delta > 0 ? 1 : values.length - 1)) % values.length;
+        feedback_mic_warning_set(values[nextIdx]);
         return;
     }
 }
@@ -11462,6 +11517,43 @@ globalThis.tick = function() {
         drawTextEntry();
     }
 
+    /* Poll feedback protection state — all indicators are NON-BLOCKING.
+     * Never sets warningActive, never consumes input.
+     * Gate active (state 3): show "! Mic Active" + TTS, any button dismisses.
+     * After dismiss: small corner "M" for configurable duration.
+     * Protection (per-slot limiter + global safety) runs silently always. */
+    {
+        const muteState = typeof feedback_mute_active_get === "function" ? feedback_mute_active_get() : 0;
+        if (muteState === 3) {
+            /* Gate active — show warning, audio gated until user presses any button */
+            if (typeof drawText === "function") {
+                drawText(0, 0, "! Mic Active", 1);
+            }
+            if (!micWarningAnnounced) {
+                announce("Mic active. Press any button.");
+                micWarningAnnounced = true;
+            }
+            micWarningDismissedAt = 0;
+        } else {
+            /* Gate cleared (or was never set) */
+            if (micWarningAnnounced && !micWarningDismissedAt) {
+                micWarningDismissedAt = Date.now();
+            }
+            micWarningAnnounced = false;
+
+            /* Small corner indicator after dismiss (configurable duration) */
+            if (micWarningDismissedAt > 0 && typeof drawText === "function") {
+                const secs = typeof feedback_mic_warning_get === "function" ? feedback_mic_warning_get() : 2;
+                if (secs === 0 || (secs <= 5 && Date.now() - micWarningDismissedAt > secs * 1000)) {
+                    micWarningDismissedAt = 0;
+                } else {
+                    drawText(118, 0, "M", 1);
+                }
+            }
+        }
+
+    }
+
     /* Draw warning overlay if active */
     if (warningActive) {
         drawMessageOverlay(warningTitle, warningLines);
@@ -11490,6 +11582,18 @@ globalThis.onMidiMessageInternal = function(data) {
         if (handleTextEntryMidi(data)) {
             needsRedraw = true;
             return;  /* Consumed by text entry */
+        }
+    }
+
+    /* Non-blocking: any button/pad press clears feedback gate, does NOT consume the press.
+     * Protection layers (per-slot limiter, global safety) continue running silently. */
+    if (typeof feedback_mute_active_get === "function" && feedback_mute_active_get() === 3) {
+        if ((status & 0xF0) === 0xB0 && d2 > 0) {
+            const isKnob = d1 === MoveMainKnob || (d1 >= KNOB_CC_START && d1 <= KNOB_CC_END);
+            if (!isKnob && typeof feedback_mute_dismiss === "function") {
+                feedback_mute_dismiss();
+                /* Falls through — button press processes normally */
+            }
         }
     }
 

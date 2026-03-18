@@ -2040,6 +2040,8 @@ void shadow_inprocess_handle_param_request(void) {
                         }
                     }
                 }
+
+                /* Feedback risk check done in shim ioctl path (move_anything_shim.c) */
             }
             if (!shadow_chain_slots[slot].active &&
                 (strcmp(key_copy, "fx1:module") == 0 ||
