@@ -29,7 +29,7 @@ Move Anything is a framework for custom JavaScript and native DSP modules on Abl
 ./scripts/uninstall.sh       # Restore stock Move
 ```
 
-Cross-compilation uses `${CROSS_PREFIX}gcc` for the Move's ARM architecture.
+Cross-compilation uses `${CROSS_PREFIX}gcc` for the Move's ARM architecture. The build uses `ARCH_FLAGS="-mcpu=cortex-a72"` for CPU tuning and `MATH_FLAGS="-funsafe-math-optimizations -fno-math-errno"` for DSP targets. Do NOT use `-ffast-math` (breaks QuickJS `isnan`/`isfinite`). The shim uses `-flto` for cross-TU inlining. See `BUILDING.md` for the full flag assignment table.
 
 **Deployment shortcut**: `./scripts/install.sh local --skip-modules --skip-confirmation` — never scp individual files; the install script handles setuid, symlinks, feature config, and service restart.
 
@@ -470,6 +470,18 @@ Key shared memory segments:
 - `/move-shadow-control` - Control flags and state (shadow_control_t)
 - `/move-shadow-param` - Parameter get/set requests (shadow_param_t)
 - `/move-shadow-ui` - UI state for slot info (shadow_ui_state_t)
+
+### shadow_control_t Fields (Feature-Specific)
+
+- `tts_voice` (uint8_t): eSpeak-NG voice index (0=en, 1=en-US, 2=en-GB-x-rp, 3=en-GB-scotland)
+- `feedback_mute_active` (uint8_t): 0=normal, 3=mic warning (Line In gated until button press)
+- `feedback_config` (uint8_t): Bit-packed feedback settings. Use `FEEDBACK_CFG_*` macros from `shadow_constants.h`:
+  - bits 0-2: mic_warning_secs (0=off, 1-5=auto-dismiss seconds, 6=manual dismiss)
+  - bit 3: `FEEDBACK_CFG_PROTECTION_ON` — feedback guard enabled
+  - bit 4: `FEEDBACK_CFG_JACK_WARNING` — warn on cable unplug while feedback-risk module active
+  - bits 5-7: reserved
+  - Default: `FEEDBACK_CFG_DEFAULT` (0x1A = guard on, jack warn on, mic warn 2s)
+  - 6 reserved bytes remain in `shadow_control_t`.
 
 ### Shadow UI Flags
 

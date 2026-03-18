@@ -135,6 +135,14 @@ mkdir -p ./build/modules/midi_fx/velocity_scale/
 mkdir -p ./build/modules/sound_generators/linein/
 mkdir -p ./build/modules/tools/wav-player/
 
+# Cross-compile optimization flags for Cortex-A72 (Ableton Move)
+# -mcpu=cortex-a72: equivalent to -march=armv8-a+crc -mtune=cortex-a72
+# -funsafe-math-optimizations: enables FMA fusion, reciprocal divides, relaxed associativity
+# -fno-math-errno: skips errno setting after math calls (not checked in this codebase)
+# Note: NOT using -ffast-math because -ffinite-math-only breaks QuickJS (isnan/isfinite)
+ARCH_FLAGS="-mcpu=cortex-a72"
+MATH_FLAGS="-funsafe-math-optimizations -fno-math-errno"
+
 # Generate bitmap font for host display (single source of truth: scripts/generate_font.py)
 if needs_rebuild build/host/font.png scripts/generate_font.py; then
     echo "Generating host bitmap font..."
@@ -162,7 +170,7 @@ if needs_rebuild build/move-anything \
     src/move_anything.c src/host/module_manager.c src/host/settings.c src/host/unified_log.c \
     src/host/module_manager.h src/host/settings.h src/host/plugin_api_v1.h src/host/unified_log.h; then
     echo "Building host..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" -g -O3 $ARCH_FLAGS $MATH_FLAGS \
         src/move_anything.c \
         src/host/module_manager.c \
         src/host/settings.c \
@@ -193,7 +201,7 @@ if needs_rebuild build/move-anything-shim.so \
     src/host/plugin_api_v1.h src/host/unified_log.h src/host/tts_engine.h \
     src/host/link_audio.h; then
     echo "Building shim..."
-    "${CROSS_PREFIX}gcc" -g3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" -g3 -O3 -shared -fPIC -flto $ARCH_FLAGS $MATH_FLAGS \
         -o build/move-anything-shim.so \
         src/move_anything_shim.c \
         src/host/shadow_sampler.c \
@@ -222,7 +230,7 @@ fi
 if needs_rebuild build/move-anything-web-shim.so \
     src/host/web_shim.c src/host/unified_log.c src/host/unified_log.h; then
     echo "Building web shim..."
-    "${CROSS_PREFIX}gcc" -g -shared -fPIC \
+    "${CROSS_PREFIX}gcc" -g -shared -fPIC $ARCH_FLAGS \
         -o build/move-anything-web-shim.so \
         src/host/web_shim.c \
         src/host/unified_log.c \
@@ -235,7 +243,7 @@ fi
 if needs_rebuild build/unified-log \
     src/host/unified_log_cli.c src/host/unified_log.c src/host/unified_log.h; then
     echo "Building unified log CLI..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" -g -O3 $ARCH_FLAGS \
         src/host/unified_log_cli.c \
         src/host/unified_log.c \
         -o build/unified-log \
@@ -248,7 +256,7 @@ fi
 if needs_rebuild build/shadow/shadow_poc \
     examples/shadow_poc.c src/host/shadow_constants.h; then
     echo "Building Shadow POC..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" -g -O3 $ARCH_FLAGS $MATH_FLAGS \
         examples/shadow_poc.c \
         -o build/shadow/shadow_poc \
         -Isrc -Isrc/host \
@@ -262,7 +270,7 @@ if needs_rebuild build/shadow/shadow_ui \
     src/shadow/shadow_ui.c src/host/js_display.c src/host/unified_log.c \
     src/host/js_display.h src/host/shadow_constants.h src/host/unified_log.h; then
     echo "Building Shadow UI..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" -g -O3 $ARCH_FLAGS \
         src/shadow/shadow_ui.c \
         src/host/js_display.c \
         src/host/unified_log.c \
@@ -285,11 +293,11 @@ if [ -d "./libs/link/include/ableton" ]; then
         "${CROSS_PREFIX}gcc" -c -g -O0 \
             src/host/arc4random_compat.c \
             -o build/arc4random_compat.o
-        "${CROSS_PREFIX}gcc" -c -g -O3 \
+        "${CROSS_PREFIX}gcc" -c -g -O3 $ARCH_FLAGS \
             src/host/unified_log.c \
             -o build/unified_log.o \
             -Isrc -Isrc/host
-        "${CROSS_PREFIX}g++" -std=c++17 -O3 -DNDEBUG \
+        "${CROSS_PREFIX}g++" -std=c++17 -O3 -DNDEBUG $ARCH_FLAGS \
             -DLINK_PLATFORM_UNIX=1 \
             -DLINK_PLATFORM_LINUX=1 \
             -Wno-multichar \
@@ -315,7 +323,7 @@ fi
 if needs_rebuild build/bin/midi_inject_test \
     tests/shadow/midi_inject_test.c src/host/shadow_constants.h; then
     echo "Building MIDI inject test tool..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" -g -O3 $ARCH_FLAGS \
         tests/shadow/midi_inject_test.c \
         -o build/bin/midi_inject_test \
         -Isrc \
@@ -395,7 +403,7 @@ if needs_rebuild build/modules/chain/dsp.so \
     src/host/unified_log.h src/host/plugin_api_v1.h src/host/audio_fx_api_v1.h \
     src/host/audio_fx_api_v2.h src/host/midi_fx_api_v1.h src/host/lfo_common.h; then
     echo "Building chain DSP..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC $ARCH_FLAGS $MATH_FLAGS \
         src/modules/chain/dsp/chain_host.c \
         src/host/unified_log.c \
         -o build/modules/chain/dsp.so \
@@ -411,7 +419,7 @@ echo "Building Audio FX plugins..."
 if needs_rebuild build/modules/audio_fx/freeverb/freeverb.so \
     src/modules/audio_fx/freeverb/freeverb.c src/host/audio_fx_api_v1.h; then
     echo "Building freeverb..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC $ARCH_FLAGS $MATH_FLAGS \
         src/modules/audio_fx/freeverb/freeverb.c \
         -o build/modules/audio_fx/freeverb/freeverb.so \
         -Isrc \
@@ -426,7 +434,7 @@ echo "Building MIDI FX plugins..."
 if needs_rebuild build/modules/midi_fx/chord/dsp.so \
     src/modules/midi_fx/chord/dsp/chord.c src/host/midi_fx_api_v1.h; then
     echo "Building chord MIDI FX..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC $ARCH_FLAGS $MATH_FLAGS \
         src/modules/midi_fx/chord/dsp/chord.c \
         -o build/modules/midi_fx/chord/dsp.so \
         -Isrc
@@ -438,7 +446,7 @@ fi
 if needs_rebuild build/modules/midi_fx/arp/dsp.so \
     src/modules/midi_fx/arp/dsp/arp.c src/host/midi_fx_api_v1.h; then
     echo "Building arp MIDI FX..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC $ARCH_FLAGS $MATH_FLAGS \
         src/modules/midi_fx/arp/dsp/arp.c \
         -o build/modules/midi_fx/arp/dsp.so \
         -Isrc
@@ -450,7 +458,7 @@ fi
 if needs_rebuild build/modules/midi_fx/velocity_scale/dsp.so \
     src/modules/midi_fx/velocity_scale/dsp/velocity_scale.c src/host/midi_fx_api_v1.h; then
     echo "Building velocity scale MIDI FX..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC $ARCH_FLAGS $MATH_FLAGS \
         src/modules/midi_fx/velocity_scale/dsp/velocity_scale.c \
         -o build/modules/midi_fx/velocity_scale/dsp.so \
         -Isrc
@@ -464,7 +472,7 @@ echo "Building Sound Generator plugins..."
 if needs_rebuild build/modules/sound_generators/linein/dsp.so \
     src/modules/sound_generators/linein/linein.c src/host/plugin_api_v1.h; then
     echo "Building line-in generator..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC $ARCH_FLAGS $MATH_FLAGS \
         src/modules/sound_generators/linein/linein.c \
         -o build/modules/sound_generators/linein/dsp.so \
         -Isrc \
@@ -477,7 +485,7 @@ fi
 if needs_rebuild build/modules/tools/wav-player/dsp.so \
     src/modules/tools/wav-player/wav_player.c src/host/plugin_api_v1.h; then
     echo "Building WAV Player tool DSP..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC $ARCH_FLAGS $MATH_FLAGS \
         src/modules/tools/wav-player/wav_player.c \
         -o build/modules/tools/wav-player/dsp.so \
         -Isrc
@@ -520,7 +528,7 @@ fi
 if needs_rebuild build/display-server \
     src/host/display_server.c src/host/unified_log.c src/host/unified_log.h; then
     echo "Building display server..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" -g -O3 $ARCH_FLAGS \
         src/host/display_server.c \
         src/host/unified_log.c \
         -o build/display-server \

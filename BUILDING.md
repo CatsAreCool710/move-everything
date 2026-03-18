@@ -198,12 +198,41 @@ file build/move-anything
 **SSH connection issues**
 Add your public key at http://move.local/development/ssh
 
+## Compiler Optimization Flags
+
+The build script defines two optimization flag variables for the Cortex-A72 (Ableton Move's processor):
+
+```bash
+ARCH_FLAGS="-mcpu=cortex-a72"       # Tuned instruction scheduling, enables CRC32 extension
+MATH_FLAGS="-funsafe-math-optimizations -fno-math-errno"  # FMA fusion, reciprocal divides
+```
+
+**Why not `-ffast-math`?** Full `-ffast-math` implies `-ffinite-math-only`, which makes `isnan()`/`isfinite()` return incorrect results. QuickJS (the JavaScript engine) relies on these for IEEE 754 Number semantics. The subset flags `-funsafe-math-optimizations -fno-math-errno` provide most of the performance benefit (FMA fusion, reciprocal divides, relaxed associativity) without breaking NaN/Inf handling.
+
+**Flag assignment by target:**
+
+| Target | `ARCH_FLAGS` | `MATH_FLAGS` | `-flto` | Notes |
+|--------|:---:|:---:|:---:|-------|
+| `move-anything` (host) | Yes | Yes | No | |
+| `move-anything-shim.so` | Yes | Yes | Yes | Upgraded to `-O3` with LTO |
+| `move-anything-web-shim.so` | Yes | No | No | No float math |
+| `shadow_ui` | Yes | No | No | Links QuickJS |
+| `shadow_poc` | Yes | Yes | No | Reference example |
+| `unified-log` | Yes | No | No | CLI tool |
+| `link-subscriber` (C++) | Yes | No | No | No DSP |
+| `midi_inject_test` | Yes | No | No | Test tool |
+| `display-server` | Yes | No | No | SSE display streaming |
+| DSP modules (chain, freeverb, linein, etc.) | Yes | Yes | No | Single-file .so, LTO has no cross-TU benefit |
+| `arc4random_compat.o` | No | No | No | Intentionally `-O0` |
+| `libpcaudio.so.0` (stub) | No | No | No | Stub library |
+
 ## Module Development
 
 Rebuild a single module:
 
 ```bash
-aarch64-linux-gnu-gcc -g -O3 -shared -fPIC \
+aarch64-linux-gnu-gcc -g -O3 -shared -fPIC -mcpu=cortex-a72 \
+    -funsafe-math-optimizations -fno-math-errno \
     src/modules/sf2/dsp/sf2_plugin.c \
     -o build/modules/sf2/dsp.so \
     -Isrc -Isrc/modules/sf2/dsp -lm

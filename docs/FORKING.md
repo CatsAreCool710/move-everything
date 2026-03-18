@@ -42,28 +42,43 @@ This gives forks 16 additional flag bits without modifying the upstream struct l
 ### Rules
 
 1. **Never shrink the struct** - both shim and shadow UI map the same shared memory
-2. **Add new fields by consuming `reserved` bytes from the end** - the `reserved[19]` array at the end is the expansion area
+2. **Add new fields by consuming `reserved` bytes from the end** - currently `reserved[6]` (6 bytes available). Three bytes are allocated for `tts_voice`, `feedback_mute_active`, and `feedback_config`.
 3. **Keep byte alignment in mind** - `uint16_t` fields need 2-byte alignment, `uint32_t` and `float` need 4-byte alignment
 4. **Never reorder existing fields** - the shim and shadow UI may be different versions during an upgrade
+5. **Bit-pack related settings** - use a single byte with bitmask macros for groups of small settings (see `feedback_config` and `FEEDBACK_CFG_*` macros for an example)
 
 ### Example: adding a new field
 
 ```c
 /* BEFORE: */
-volatile uint8_t set_pages_enabled;
-volatile uint8_t reserved[19];  /* 19 bytes available */
+volatile uint8_t pad_block;
+volatile uint8_t tts_voice;
+volatile uint8_t feedback_mute_active;
+volatile uint8_t feedback_config;
+volatile uint8_t reserved[6];  /* 6 bytes available */
 
 /* AFTER: consuming 1 byte from reserved */
-volatile uint8_t set_pages_enabled;
+volatile uint8_t pad_block;
+volatile uint8_t tts_voice;
+volatile uint8_t feedback_mute_active;
+volatile uint8_t feedback_config;
 volatile uint8_t my_new_field;     /* New field */
-volatile uint8_t reserved[18];     /* 18 bytes remaining */
+volatile uint8_t reserved[5];     /* 5 bytes remaining */
 ```
 
-For multi-byte fields, consume from the end and adjust alignment:
+### Bit-packing example
+
+When multiple related boolean/small-enum settings share a feature area, pack them into one byte with macros:
+
 ```c
-volatile uint8_t set_pages_enabled;
-volatile uint8_t reserved[15];     /* Padding for alignment */
-volatile uint32_t my_new_counter;  /* New 4-byte field at end */
+/* feedback_config packs 3 settings into 1 byte (bits 5-7 reserved) */
+#define FEEDBACK_CFG_MIC_WARN_MASK   0x07  /* bits 0-2: mic warning seconds (0-6) */
+#define FEEDBACK_CFG_PROTECTION_ON   0x08  /* bit 3 */
+#define FEEDBACK_CFG_JACK_WARNING    0x10  /* bit 4 */
+
+/* Read: */  int guard_on = (cfg & FEEDBACK_CFG_PROTECTION_ON) != 0;
+/* Write: */ cfg |= FEEDBACK_CFG_PROTECTION_ON;   /* set */
+/* Clear: */ cfg &= ~FEEDBACK_CFG_PROTECTION_ON;  /* clear */
 ```
 
 ## Build Script Conventions
