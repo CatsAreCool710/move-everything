@@ -474,14 +474,21 @@ Key shared memory segments:
 ### shadow_control_t Fields (Feature-Specific)
 
 - `tts_voice` (uint8_t): eSpeak-NG voice index (0=en, 1=en-US, 2=en-GB-x-rp, 3=en-GB-scotland)
-- `feedback_mute_active` (uint8_t): 0=normal, 3=mic warning (Line In gated until button press)
+- `feedback_mute_active` (uint8_t): 0=normal, 3=mic warning (Line In gated until button press). JS: `feedback_mute_active_get()`, `feedback_mute_dismiss()`.
 - `feedback_config` (uint8_t): Bit-packed feedback settings. Use `FEEDBACK_CFG_*` macros from `shadow_constants.h`:
-  - bits 0-2: mic_warning_secs (0=off, 1-5=auto-dismiss seconds, 6=manual dismiss)
-  - bit 3: `FEEDBACK_CFG_PROTECTION_ON` — feedback guard enabled
-  - bit 4: `FEEDBACK_CFG_JACK_WARNING` — warn on cable unplug while feedback-risk module active
+  - bits 0-2: mic_warning_secs (0=off, 1-5=auto-dismiss seconds, 6=manual dismiss). JS: `feedback_mic_warning_get()` / `feedback_mic_warning_set(int)`. UI: Global Settings > Safety > Mic Warning
+  - bit 3: `FEEDBACK_CFG_PROTECTION_ON` — feedback guard enabled. JS: `feedback_protection_get()` / `feedback_protection_set(bool)`. UI: Global Settings > Safety > Feedback Guard
+  - bit 4: `FEEDBACK_CFG_JACK_WARNING` — warn on cable unplug while feedback-risk module active. JS: `feedback_jack_warning_get()` / `feedback_jack_warning_set(bool)`. UI: Global Settings > Safety > Jack Warning
   - bits 5-7: reserved
   - Default: `FEEDBACK_CFG_DEFAULT` (0x1A = guard on, jack warn on, mic warn 2s)
   - 6 reserved bytes remain in `shadow_control_t`.
+- Feedback protection: `src/host/feedback_detect.h/c` (global safety net) + per-slot limiter in `chain_host.c`.
+  - Per-slot limiter: feedback_risk_active slots get output RMS monitoring, gain reduced when > -12 dBFS
+  - Global safety: `feedback_detect_suppress()` runs pre-ioctl on hardware AUDIO_OUT. Context-aware: -6 dBFS / 58ms when feedback loop possible, -1 dBFS / 145ms otherwise. Floor: -20dB active, -6dB inactive.
+  - CC 114 observed unconditionally (outside shadow_display_mode gate), read-only — Move sees CC 114 unmodified
+  - TTS mixed AFTER suppression via `shadow_mix_tts_to_hardware()` — screen reader always reaches DAC
+  - Line In load gating: feedback_risk modules gated until user presses any button (non-blocking dismiss, feedback_gate in chain_host)
+  - `feedback_risk` get_param: modules return "1" if they read AUDIO_IN. `feedback_gate` set_param: chain_host gates/ungates audio.
 
 ### Shadow UI Flags
 

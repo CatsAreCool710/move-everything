@@ -130,7 +130,7 @@ export function drawGlobalSettings() {
             drawHelpDetail, drawHelpList,
             globalSettingsInSection, globalSettingsSectionIndex,
             globalSettingsItemIndex, globalSettingsEditing,
-            GLOBAL_SETTINGS_SECTIONS,
+            GLOBAL_SETTINGS_SECTIONS, getSettingSectionItems,
             getMasterFxSettingValue } = ctx;
 
     clear_screen();
@@ -146,14 +146,15 @@ export function drawGlobalSettings() {
 
     if (globalSettingsInSection) {
         const section = GLOBAL_SETTINGS_SECTIONS[globalSettingsSectionIndex];
+        const items = getSettingSectionItems(section);
         drawHeader(truncateText(section.label, 18));
 
         drawMenuList({
-            items: section.items,
+            items: items,
             selectedIndex: globalSettingsItemIndex,
             getLabel: (item) => {
                 if (globalSettingsEditing &&
-                    section.items[globalSettingsItemIndex] === item) {
+                    items[globalSettingsItemIndex] === item) {
                     return "[" + item.label + "]";
                 }
                 return item.label;

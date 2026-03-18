@@ -113,11 +113,9 @@ static unsigned char shadow_mailbox[4096] __attribute__((aligned(64))); /* Shado
 #define CC_SAMPLE 87
 #define CC_MUTE 88
 #define CC_MIC_IN_DETECT 114
-#define CC_LINE_OUT_DETECT 115
-#define CC_RECORD 118
-#define CC_DELETE 119
-#define CC_STEP_UI_FIRST 16
-#define CC_STEP_UI_LAST 31
+#include "host/feedback_detect.h"
+static feedback_detect_state_t feedback_state;
+static int any_slot_feedback_risk = 0;  /* 1 if any slot has feedback_risk=1 */
 
 /* Shadow structs from shadow_constants.h: shadow_control_t, shadow_ui_state_t, shadow_param_t */
 static shadow_control_t *shadow_control = NULL;
@@ -1972,10 +1970,14 @@ static void init_shadow_shm(void)
             shadow_control->tts_engine = 0;     /* 0=espeak-ng (speak engine) */
             shadow_control->overlay_knobs_mode = OVERLAY_KNOBS_NATIVE; /* Native by default */
             shadow_control->tts_debounce_ms = 50; /* default debounce ms */
+            shadow_control->feedback_config = FEEDBACK_CFG_DEFAULT; /* guard on, emergency mute on, mic warn 2s */
         }
     } else {
         printf("Shadow: Failed to create control shm\n");
     }
+
+    /* Initialize feedback detection engine */
+    feedback_detect_init(&feedback_state);
 
     /* Create/open UI shared memory (slot labels/state) */
     shm_ui_fd = shm_open(SHM_SHADOW_UI, O_CREAT | O_RDWR, 0666);
@@ -2290,15 +2292,16 @@ static void shadow_mix_audio(void)
      * when Link Audio is active, so TTS must be mixed in afterward. */
 }
 
-/* Mix TTS audio into mailbox.  Called AFTER shadow_inprocess_mix_from_buffer()
- * because that function may zero-and-rebuild the mailbox when Link Audio is
- * active.  Mixing TTS here ensures it is never wiped by the rebuild. */
-static void shadow_mix_tts(void)
+/* Mix TTS audio directly into the HARDWARE buffer, AFTER feedback suppression.
+ * This ensures screen reader speech is never affected by feedback notch filters,
+ * gain reduction, or emergency mute. TTS always reaches the DAC.
+ * Called in the pre-ioctl section after feedback_detect_suppress(). */
+static void shadow_mix_tts_to_hardware(void)
 {
-    if (!global_mmap_addr) return;
+    if (!hardware_mmap_addr) return;
     if (!tts_is_speaking()) return;
 
-    int16_t *mailbox_audio = (int16_t *)(global_mmap_addr + AUDIO_OUT_OFFSET);
+    int16_t *hw_audio = (int16_t *)(hardware_mmap_addr + AUDIO_OUT_OFFSET);
     static int16_t tts_buffer[FRAMES_PER_BLOCK * 2];  /* Stereo interleaved */
     int frames_read = tts_get_audio(tts_buffer, FRAMES_PER_BLOCK);
 
@@ -2306,11 +2309,10 @@ static void shadow_mix_tts(void)
         float mv = shadow_master_volume;
         for (int i = 0; i < frames_read * 2; i++) {
             int32_t scaled_tts = (int32_t)lroundf((float)tts_buffer[i] * mv);
-            int32_t mixed = (int32_t)mailbox_audio[i] + scaled_tts;
-            /* Clip to int16 range */
+            int32_t mixed = (int32_t)hw_audio[i] + scaled_tts;
             if (mixed > 32767) mixed = 32767;
             if (mixed < -32768) mixed = -32768;
-            mailbox_audio[i] = (int16_t)mixed;
+            hw_audio[i] = (int16_t)mixed;
         }
     }
 }
@@ -3319,6 +3321,40 @@ int ioctl(int fd, unsigned long request, ...)
     shadow_inprocess_handle_param_request();
     TIME_SECTION_END(param_req_sum, param_req_max);
 
+    /* Track feedback_risk across slots: query get_param("feedback_risk") when
+     * a slot's active state changes. Also gate audio on load if mic likely active. */
+    {
+        static int prev_slot_active[4] = {0, 0, 0, 0};
+        int risk = 0;
+        for (int s = 0; s < 4; s++) {
+            int active = shadow_chain_slots[s].active;
+            if (active && shadow_plugin_v2 && shadow_plugin_v2->get_param) {
+                char risk_buf[4] = {0};
+                int rlen = shadow_plugin_v2->get_param(
+                    shadow_chain_slots[s].instance,
+                    "feedback_risk", risk_buf, sizeof(risk_buf));
+                if (rlen > 0 && risk_buf[0] == '1') {
+                    risk = 1;
+                    /* Gate on first load if mic likely active */
+                    if (!prev_slot_active[s] && !feedback_state.jack_plugged && shadow_control) {
+                        uint8_t fcfg = shadow_control->feedback_config;
+                        int guard_on = (fcfg & FEEDBACK_CFG_PROTECTION_ON) != 0;
+                        int mic_warn = FEEDBACK_CFG_MIC_WARN(fcfg);
+                        if (guard_on && mic_warn > 0) {
+                            shadow_plugin_v2->set_param(
+                                shadow_chain_slots[s].instance, "feedback_gate", "1");
+                            shadow_control->feedback_mute_active = 3;
+                            unified_log("shim", LOG_LEVEL_INFO,
+                                "Feedback-risk module loaded in slot %d, gate set", s + 1);
+                        }
+                    }
+                }
+            }
+            prev_slot_active[s] = active;
+        }
+        any_slot_feedback_risk = risk;
+    }
+
     /* Forward CC/pitch bend/aftertouch from external MIDI to MIDI_OUT
      * so DSP routing can pick them up (Move only echoes notes, not these) */
     shadow_forward_external_cc_to_out();
@@ -3387,8 +3423,9 @@ int ioctl(int fd, unsigned long request, ...)
         }
     }
 
-    /* Mix TTS audio AFTER inprocess mix (which may zero-rebuild mailbox for Link Audio) */
-    shadow_mix_tts();
+    /* TTS audio is now mixed directly into the hardware buffer AFTER feedback
+     * suppression, in the pre-ioctl section (shadow_mix_tts_to_hardware).
+     * This ensures screen reader speech bypasses all feedback protection. */
 
     /* Signal Link Audio publisher thread to drain accumulated audio */
     if (link_audio.publisher_running) {
@@ -3778,6 +3815,30 @@ do_ioctl:
             memset(hardware_mmap_addr + AUDIO_OUT_OFFSET, 0,
                    DISPLAY_OFFSET - AUDIO_OUT_OFFSET);
         }
+        /* Global safety net: output limiter with context-aware thresholds.
+         * Applied to hardware AUDIO_OUT BEFORE it goes to the DAC. */
+        feedback_detect_suppress(&feedback_state,
+            (int16_t *)(hardware_mmap_addr + AUDIO_OUT_OFFSET),
+            FRAMES_PER_BLOCK);
+        /* Sync mic warning state. Detect JS dismiss (3→0) to clear gates. */
+        if (shadow_control) {
+            static uint8_t prev_mute_active = 0;
+            uint8_t js_val = shadow_control->feedback_mute_active;
+            if (prev_mute_active == 3 && js_val == 0) {
+                for (int s = 0; s < 4; s++) {
+                    if (shadow_chain_slots[s].active && shadow_plugin_v2) {
+                        shadow_plugin_v2->set_param(
+                            shadow_chain_slots[s].instance, "feedback_gate", "0");
+                    }
+                }
+                /* Clear shift-held state to prevent stuck shift after dismiss */
+                shadow_shift_held = 0;
+                unified_log("shim", LOG_LEVEL_INFO, "Feedback gate cleared by user dismiss");
+            }
+            prev_mute_active = js_val;
+        }
+        /* Mix TTS AFTER feedback suppression — screen reader always reaches DAC */
+        shadow_mix_tts_to_hardware();
     }
 
     /* === HARDWARE TRANSACTION === */
@@ -3800,6 +3861,23 @@ do_ioctl:
 
         /* Bridge Move Everything's total mix into native resampling path when selected. */
         native_resample_bridge_apply();
+
+        /* Layer 2: Analyze AUDIO_IN post-ioctl (fresh from hardware).
+         * Only runs when a feedback loop is possible. */
+        if (shadow_control) {
+            uint8_t fcfg = shadow_control->feedback_config;
+            feedback_state.enabled = (fcfg & FEEDBACK_CFG_PROTECTION_ON) != 0;
+            /* Detection active when feedback loop is possible:
+             * feedback-risk module loaded, OR sampler=ME, OR bridge active.
+             * Used by Layer 3 (global safety) for context-aware thresholds. */
+            feedback_state.detection_active =
+                any_slot_feedback_risk ||
+                (sampler_source == SAMPLER_SOURCE_RESAMPLE) ||
+                (native_resample_bridge_mode != NATIVE_RESAMPLE_BRIDGE_OFF);
+        }
+        /* Layer 2 (frequency tracker/notch) removed — was unreliable.
+         * Layer 1 (per-slot limiter in chain_host) + Layer 3 (global safety
+         * in feedback_detect_suppress, called pre-ioctl) handle feedback. */
 
         /* Capture audio for sampler post-ioctl (Move Input source only - fresh hardware input) */
         if (sampler_source == SAMPLER_SOURCE_MOVE_INPUT) {
@@ -3848,6 +3926,44 @@ do_ioctl:
                 shadow_log("Overtake exit: injected shift-off and volume-touch-off");
             }
             prev_overtake_mode = overtake_mode;
+        }
+
+        /* Observe CC 114 (jack detect) from hardware MIDI_IN — always active.
+         * Read-only: does NOT modify the buffer. Move sees CC 114 unmodified.
+         * This must run outside the shadow_display_mode gate so feedback
+         * protection always knows the jack state. */
+        {
+            uint8_t *hw = hardware_mmap_addr + MIDI_IN_OFFSET;
+            for (int j = 0; j < MIDI_BUFFER_SIZE; j += 4) {
+                if ((hw[j] & 0x0F) == 0x0B &&       /* CIN = Control Change */
+                    (hw[j] >> 4) == 0x00 &&          /* Cable 0 (internal) */
+                    hw[j + 1] == 0xB0 &&             /* CC status, channel 0 */
+                    hw[j + 2] == CC_MIC_IN_DETECT) { /* CC 114 */
+                    int plugged = hw[j + 3] > 0;
+                    feedback_detect_set_jack(&feedback_state, plugged);
+                    unified_log("shim", LOG_LEVEL_DEBUG,
+                               "CC 114 (jack detect): value=%d plugged=%d risk=%d",
+                               hw[j + 3], plugged, any_slot_feedback_risk);
+                    /* Jack unplug warning: only when Jack Warning is on AND
+                     * a feedback-risk module is active (e.g., Line In) */
+                    if (shadow_control && !plugged && any_slot_feedback_risk) {
+                        uint8_t fcfg = shadow_control->feedback_config;
+                        int guard_on = (fcfg & FEEDBACK_CFG_PROTECTION_ON) != 0;
+                        int jack_warn = (fcfg & FEEDBACK_CFG_JACK_WARNING) != 0;
+                        if (!feedback_state.mic_warning_given && guard_on && jack_warn) {
+                            shadow_control->feedback_mute_active = 3;
+                            tts_speak("Warning: cable removed. Internal mic may be active.");
+                            feedback_state.mic_warning_given = 1;
+                        }
+                    }
+                    /* Reset warning state when jack re-inserted */
+                    if (plugged) {
+                        feedback_state.mic_warning_given = 0;
+                        if (shadow_control && shadow_control->feedback_mute_active == 3)
+                            shadow_control->feedback_mute_active = 0;
+                    }
+                }
+            }
         }
 
         if (shadow_display_mode && shadow_control) {
@@ -4699,6 +4815,10 @@ do_ioctl:
 
             /* Handle CC events */
             if (type == 0xB0) {
+                /* Note: CC 114 (jack detect) is handled unconditionally in the
+                 * post-ioctl section above, outside the shadow_display_mode gate,
+                 * so feedback protection always knows the jack state. */
+
                 /* CCs to forward to shadow UI:
                  * - CC 14 (jog wheel), CC 3 (jog click), CC 51 (back)
                  * - CC 40-43 (track buttons)

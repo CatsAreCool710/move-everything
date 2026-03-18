@@ -296,6 +296,43 @@
           ]
         },
         {
+          "title": "Feedback Protection",
+          "lines": [
+            "Auto-detects audio",
+            "feedback when the",
+            "internal mic may be",
+            "active.",
+            "",
+            "Warns when mic may",
+            "be active. Spoken",
+            "when screen reader on.",
+            "",
+            "Active protection:",
+            " Per-slot gain limit",
+            " Global output safety",
+            " Screen reader not",
+            " affected",
+            "",
+            "Line In load gating:",
+            " Audio gated when mic",
+            " likely active. Press",
+            " any button to allow.",
+            "",
+            "Recovery:",
+            " Auto-recovers when",
+            " audio level drops.",
+            "",
+            "Settings > Safety:",
+            " Feedback Guard",
+            " Mic Warning:",
+            "  Off/1-5s/Manual",
+            " Jack Warning",
+            "",
+            "Tip: plug in a cable",
+            "to disable int. mic."
+          ]
+        },
+        {
           "title": "Tools Menu",
           "lines": [
             "Open: Shift+Vol+",

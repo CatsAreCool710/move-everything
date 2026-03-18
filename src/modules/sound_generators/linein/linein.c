@@ -730,6 +730,11 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     linein_instance_t *inst = (linein_instance_t *)instance;
     if (!key) return -1;
 
+    /* Feedback risk: Line In always reads AUDIO_IN */
+    if (strcmp(key, "feedback_risk") == 0) {
+        return snprintf(buf, buf_len, "1");
+    }
+
     if (strcmp(key, "input_type") == 0) {
         int idx = inst ? inst->input_type : 0;
         if (idx < 0 || idx >= INPUT_TYPE_COUNT) idx = 0;

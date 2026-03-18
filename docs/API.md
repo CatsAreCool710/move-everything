@@ -181,6 +181,16 @@ host_wake_all_slots()         // Clear idle flags on all shadow slots
 host_mute_move_audio(bool)    // Mute/unmute Move's audio output
 host_http_download_background(url, dest) // Background HTTP download
 host_sampler_set_external_stop(bool)     // Set external stop flag for sampler
+
+// Feedback protection (settings stored in bit-packed feedback_config byte)
+feedback_protection_get()     // Returns bool - feedback guard enabled
+feedback_protection_set(bool) // Enable/disable feedback guard
+feedback_mic_warning_get()    // Returns int - 0=off, 1-5=auto-dismiss secs, 6=manual
+feedback_mic_warning_set(int) // Set mic warning mode (0=off, 1-5=secs, 6=manual)
+feedback_jack_warning_get()   // Returns bool - jack unplug warning enabled
+feedback_jack_warning_set(bool) // Enable/disable jack unplug warning
+feedback_mute_active_get()    // Returns int - 0=normal, 3=mic warning (Line In gated)
+feedback_mute_dismiss()       // Clear mic warning, clear feedback gates on all chain slots
 ```
 
 `host_module_send_midi` accepts a 3-byte array `[status, data1, data2]` and an optional `source` (`"internal"`, `"external"`, or `"host"`).

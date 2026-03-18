@@ -90,6 +90,16 @@ typedef struct host_api_v1 {
 
 /*
  * Plugin API - implemented by plugin, returned to host
+ *
+ * Standardized get_param keys (optional, modules may implement):
+ *   "feedback_risk" -> "0" or "1": module reads AUDIO_IN, feedback possible
+ *     if internal mic is active. The shim uses this to determine when to
+ *     show mic warnings and gate audio. Defaults to "0" if not implemented.
+ *
+ * Standardized set_param keys (chain host handles these):
+ *   "feedback_gate" -> "1" or "0": gate audio output (silence) until user
+ *     dismisses mic warning. Set by shim when feedback_risk module loads
+ *     with internal mic likely active. Cleared by JS feedback_mute_dismiss().
  */
 typedef struct plugin_api_v1 {
     uint32_t api_version;

@@ -71,10 +71,10 @@ volatile uint8_t reserved[5];     /* 5 bytes remaining */
 When multiple related boolean/small-enum settings share a feature area, pack them into one byte with macros:
 
 ```c
-/* feedback_config packs 3 settings into 1 byte (bits 5-7 reserved) */
+/* feedback_config packs 3 settings into 1 byte */
 #define FEEDBACK_CFG_MIC_WARN_MASK   0x07  /* bits 0-2: mic warning seconds (0-6) */
 #define FEEDBACK_CFG_PROTECTION_ON   0x08  /* bit 3 */
-#define FEEDBACK_CFG_JACK_WARNING    0x10  /* bit 4 */
+#define FEEDBACK_CFG_EMERGENCY_MUTE  0x10  /* bit 4 */
 
 /* Read: */  int guard_on = (cfg & FEEDBACK_CFG_PROTECTION_ON) != 0;
 /* Write: */ cfg |= FEEDBACK_CFG_PROTECTION_ON;   /* set */
